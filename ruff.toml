@@ -1,0 +1,36 @@
+indent-width = 4
+output-format = "grouped"
+preview = true
+target-version = "py313"
+line-length = 100
+
+[format]
+docstring-code-format = true
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"
+
+[lint]
+select = [
+  "A",
+  "ASYNC",
+  "B",
+  "C4",
+  "DTZ",
+  "E",
+  "EM",
+  "F",
+  "G",
+  "I",
+  "LOG",
+  "PERF",
+  "PLC",
+  "PLE",
+  "PLW",
+  "PT",
+  "Q",
+  "RUF",
+  "TRY",
+  "UP",
+  "W",
+]
