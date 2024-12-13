@@ -21,7 +21,7 @@ dependencies:
   - cuda-version=12.6=3
   - filelock=3.16.1=pyhd8ed1ab_0
   - gmp=6.3.0=hac33072_2
-  - gmpy2=2.1.5=py312h7201bc8_2
+  - gmpy2=2.1.5=py312h7201bc8_3
   - jinja2=3.1.4=pyhd8ed1ab_0
   - ld_impl_linux-64=2.43=h712a8e2_2
   - libblas=3.9.0=16_linux64_mkl
