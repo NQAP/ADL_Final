@@ -1,5 +1,6 @@
 import os
 import re
+from types import MappingProxyType
 
 import evaluate
 import pandas as pd
@@ -121,7 +122,7 @@ def create_ddxplus():
         DATASET_PATH = "appier-ai-research/StreamBench_public"
         DATASET_NAME = "ddxplus"
 
-        LABEL2TEXT = {
+        LABEL2TEXT = MappingProxyType({
             0: "Acute COPD exacerbation / infection",
             1: "Acute dystonic reactions",
             2: "Acute laryngitis",
@@ -171,10 +172,10 @@ def create_ddxplus():
             46: "Unstable angina",
             47: "Viral pharyngitis",
             48: "Whooping cough",
-        }
+        })
         NOTINLABEL = len(LABEL2TEXT)
-        TEXT2LABEL = {v.lower(): k for k, v in LABEL2TEXT.items()}
-        LABEL_SET = {v.lower() for v in LABEL2TEXT.values()}
+        TEXT2LABEL = MappingProxyType({v.lower(): k for k, v in LABEL2TEXT.items()})
+        LABEL_SET = frozenset({v.lower() for v in LABEL2TEXT.values()})
 
         def __init__(self, **kwargs):
             super().__init__(**kwargs)
