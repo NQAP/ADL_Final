@@ -127,3 +127,7 @@ cython_debug/
 
 # data
 data/
+
+# logs
+/log
+/wandb

@@ -69,12 +69,14 @@ class Bench(ABC):
     def process_results(
         self, prediction: Any, label: Any, return_details: bool = False
     ) -> bool | dict:
-        """Compare the prediction with the label and calculate streaming metrics at the current time point.
+        """Compare the prediction with the label and calculate streaming metrics
+        at the current time point.
 
         Args:
             prediction (Any): the agent's prediction
             label (Any): the ground truth label
-            return_details (bool, optional): Return correctness of prediction (bool) or detailed metrics (dict). Defaults to False
+            return_details (bool, optional): Return correctness of prediction (bool) or detailed
+            metrics (dict). Defaults to False
 
         Returns:
             bool | dict:  Return correctness of prediction (bool) or detailed metrics (dict)
