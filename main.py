@@ -301,7 +301,7 @@ if __name__ == "__main__":
         msg = f"Invalid benchmark name: {args.bench_name}"
         raise ValueError(msg)
 
-    model_name = "Qwen/Qwen2.5-7B-Instruct"
+    model_name = "prince-canuma/Ministral-8B-Instruct-2410-HF"
 
     bench_cfg = {"bench_name": args.bench_name}
     config = {
