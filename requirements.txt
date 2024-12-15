@@ -20,7 +20,7 @@ func-timeout==4.3.5
 gdown==5.2.0
 gitdb==4.0.11
 GitPython==3.1.43
-huggingface-hub==0.26.5
+huggingface-hub[hf_transfer]==0.26.5
 idna==3.10
 multidict==6.1.0
 multiprocess==0.70.16

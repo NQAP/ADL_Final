@@ -1,7 +1,7 @@
 indent-width = 4
 output-format = "grouped"
 preview = true
-target-version = "py313"
+target-version = "py312"
 line-length = 100
 
 [format]

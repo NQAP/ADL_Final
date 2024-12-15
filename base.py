@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import json
 import textwrap
 
@@ -5,7 +6,7 @@ from utils import setup_logger
 
 
 # The base class used for classification and multi-choice questions (MCQs)
-class Agent:
+class Agent(ABC):
     LOG_KEYS = [  # noqa: RUF012
         "num_inference_call",  # number of inference call to the LLM
         "num_success_call",  # (per-call-level) whether the inference / API call is successful
@@ -34,6 +35,7 @@ Answer (please only answer with a single option):""")
         # accumulation of self.log_info through time steps
         self.accum_log_info = dict.fromkeys(self.LOG_KEYS, 0)
 
+    @abstractmethod
     def __call__(self, prompt: str, label_set: list[str], **kwargs) -> str:
         """
         Generate response text using the prompt.
@@ -63,6 +65,7 @@ Answer (please only answer with a single option):""")
             for key in keys:
                 assert key in train_row
 
+    @abstractmethod
     def update(self, has_feedback: bool, **feedbacks) -> bool:
         """Return True if the agent is updated in this time_step."""
         raise NotImplementedError
