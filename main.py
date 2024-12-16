@@ -257,8 +257,11 @@ class SQLGenerationAgent(LocalModelAgent):
     @staticmethod
     def get_shot_template() -> str:
         prompt = """
+
         Question: {{question}}
+
         {{answer}}
+
         """.strip()
 
         return strip_all_lines(prompt)
@@ -276,7 +279,7 @@ class SQLGenerationAgent(LocalModelAgent):
         {question}
 
         SQL:
-        {sql}
+        {answer}
         """.strip()
 
     def get_fewshot_template(self, schema: str, query: str) -> str:
@@ -365,6 +368,16 @@ class SQLGenerationAgent(LocalModelAgent):
 
         messages = [{"role": "user", "content": prompt}]
         response = self.generate_response(messages)
+
+        self.update_log_info(
+            log_data={
+                "input_pred": messages[0]["content"],
+                "output_pred": response,
+                "num_shots": str(len(shots)),
+            }
+        )
+        self.inputs.append(user_query)
+        self.self_outputs.append(f"{response!s}.")
 
         return response
 
