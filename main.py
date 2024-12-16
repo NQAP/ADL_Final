@@ -9,7 +9,13 @@ import faiss
 import numpy
 import torch
 from accelerate import Accelerator
-from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import (
+    AutoModel,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    set_seed,
+)
 from transformers import logging as transformers_logging
 
 from base import Agent
@@ -37,12 +43,10 @@ class RAG:
         self.embed_dim = len(self.encode_data("Test embedding size"))
         self.insert_acc = 0
 
-        self.seed = rag_config["seed"]
         self.top_k = rag_config["top_k"]
         orders = {member.value for member in RetrieveOrder}
         assert rag_config["order"] in orders
         self.retrieve_order = rag_config["order"]
-        random.seed(self.seed)
 
         self.create_faiss_index()
         # TODO: make a file to save the inserted rows
@@ -435,9 +439,9 @@ if __name__ == "__main__":
         "bench_name": args.bench_name,
         "model_names": ["Qwen/Qwen2.5-7B-Instruct", "google/gemma-2-9b-it"],
         "max_tokens": max_tokens,
+        "seed": 0,
         "rag": {
             "embedding_model": "dunzhang/stella_en_400M_v5",
-            "seed": 0,
             "top_k": 5,
             "order": "similar_at_top",
             "embedding_model_kwargs": {
@@ -450,6 +454,8 @@ if __name__ == "__main__":
         "bench_name": args.bench_name,
         "output_path": f"{args.bench_name}/{config['exp_name']}.csv",
     }
+
+    set_seed(config["seed"])
 
     if config["dynamo_backend"] == "tensorrt":
         import torch_tensorrt  # noqa: F401
