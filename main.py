@@ -1,3 +1,4 @@
+import gc
 import random
 import re
 import warnings
@@ -107,30 +108,46 @@ class LocalModelAgent(Agent, ABC):
 
         self.accelerator = Accelerator(dynamo_backend=self.llm_config["dynamo_backend"])
 
+        self.current_model_index = 0
+        self.model = None
+        self.tokenizer = None
+
+        self.inputs = []
+        self.self_outputs = []
+        self.rag = RAG(self.llm_config["rag"])
+
+    def prepare_model(self, index: int) -> None:
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+        )
+
+        if self.model is not None:
+            self.accelerator.free_memory(self.model)
+            del self.model
+            del self.tokenizer
+
         self.model = AutoModelForCausalLM.from_pretrained(
-            self.llm_config["model_name"],
-            quantization_config=BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_use_double_quant=True,
-            ),
+            self.llm_config["model_names"][index],
+            quantization_config=bnb_config,
             device_map="cuda:0",
             max_memory={0: "10G"},
         )
         self.model.eval()
         self.model = self.accelerator.prepare(self.model)
 
-        self.tokenizer = AutoTokenizer.from_pretrained(self.llm_config["model_name"])
-
-        self.inputs = []
-        self.self_outputs = []
-        self.rag = RAG(self.llm_config["rag"])
+        self.tokenizer = AutoTokenizer.from_pretrained(self.llm_config["model_names"][index])
 
     def generate_response(self, messages: list[dict[str, str]]) -> str:
         """
         Generate a response using the local model.
         """
+
+        self.prepare_model(self.current_model_index)
+        assert self.model is not None
+        assert self.tokenizer is not None
 
         text_chat: str = self.tokenizer.apply_chat_template(  # type: ignore
             messages, tokenize=False, add_generation_prompt=True
@@ -142,12 +159,22 @@ class LocalModelAgent(Agent, ABC):
                 **model_inputs, max_new_tokens=self.llm_config["max_tokens"], do_sample=False
             )
 
+        self.current_model_index = (self.current_model_index + 1) % len(
+            self.llm_config["model_names"]
+        )
+
         generated_ids = [
             output_ids[len(input_ids) :]
             for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids, strict=False)
         ]
 
-        return self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        response = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+        del generated_ids
+        torch.cuda.empty_cache()
+        gc.collect()
+
+        return response
 
     @override
     def update(self, correctness: bool) -> bool:
@@ -227,7 +254,10 @@ class ClassificationAgent(LocalModelAgent):
 
         {text}
 
-        Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>
+        Even if there's no diagnosis that perfectly matches the patient profile, you should still
+        choose one diagnosis from the list. Now provide the diagnosis for the patient in the
+        following format:
+        <number>. <diagnosis>
         """.strip()
 
         return strip_all_lines(prompt)
@@ -381,13 +411,11 @@ if __name__ == "__main__":
         msg = f"Invalid benchmark name: {args.bench_name}"
         raise ValueError(msg)
 
-    model_name = "google/gemma-2-9b-it"
-
     config = {
         "dynamo_backend": "tensorrt",
-        "exp_name": f"self_streamicl_{args.bench_name}_{model_name}_nf4",
+        "exp_name": f"mam_streamicl_{args.bench_name}_nf4",
         "bench_name": args.bench_name,
-        "model_name": model_name,
+        "model_names": ["Qwen/Qwen2.5-7B-Instruct", "google/gemma-2-9b-it"],
         "max_tokens": max_tokens,
         "rag": {
             "embedding_model": "dunzhang/stella_en_400M_v5",
