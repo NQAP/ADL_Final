@@ -400,7 +400,10 @@ if __name__ == "__main__":
             },
         },
     }
-    bench_cfg = {"bench_name": args.bench_name, "output_path": f"{args.bench_name}.csv"}
+    bench_cfg = {
+        "bench_name": args.bench_name,
+        "output_path": f"{args.bench_name}/{config['exp_name']}.csv",
+    }
 
     if config["dynamo_backend"] == "tensorrt":
         import torch_tensorrt  # noqa: F401
