@@ -109,8 +109,12 @@ class LocalModelAgent(Agent, ABC):
         self.accelerator = Accelerator(dynamo_backend=self.llm_config["dynamo_backend"])
 
         self.current_model_index = 0
-        self.model = None
-        self.tokenizer = None
+        self.models = {}
+        self.tokenizers = {}
+
+        if not self.llm_config["save_memory"]:
+            for i, _ in enumerate(self.llm_config["model_names"]):
+                self.prepare_model(i)
 
         self.inputs = []
         self.self_outputs = []
@@ -124,55 +128,67 @@ class LocalModelAgent(Agent, ABC):
             bnb_4bit_compute_dtype=torch.bfloat16,
         )
 
-        if self.model is not None:
-            self.accelerator.free_memory(self.model)
-            del self.model
-            del self.tokenizer
+        if self.llm_config["save_memory"]:
+            for model in self.models.values():
+                self.accelerator.free_memory(model)
+                del model
 
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.llm_config["model_names"][index],
-            quantization_config=bnb_config,
-            device_map="cuda:0",
-            max_memory={0: "10G"},
+            self.models.clear()
+            self.tokenizers.clear()
+            torch.cuda.empty_cache()
+            gc.collect()
+
+        model_name = self.llm_config["model_names"][index]
+
+        self.models[model_name] = self.accelerator.prepare(
+            AutoModelForCausalLM.from_pretrained(
+                model_name,
+                quantization_config=bnb_config,
+                device_map="cuda:0",
+                trust_remote_code=True,
+            )
         )
-        self.model.eval()
-        self.model = self.accelerator.prepare(self.model)
-
-        self.tokenizer = AutoTokenizer.from_pretrained(self.llm_config["model_names"][index])
+        self.tokenizers[model_name] = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=True
+        )
 
     def generate_response(self, messages: list[dict[str, str]]) -> str:
         """
         Generate a response using the local model.
         """
 
-        self.prepare_model(self.current_model_index)
-        assert self.model is not None
-        assert self.tokenizer is not None
+        if self.llm_config["save_memory"]:
+            self.prepare_model(self.current_model_index)
+            assert len(self.models) == 1
 
-        text_chat: str = self.tokenizer.apply_chat_template(  # type: ignore
+        model_name = self.llm_config["model_names"][self.current_model_index]
+        current_model, current_tokenizer = self.models[model_name], self.tokenizers[model_name]
+
+        text_chat: str = current_tokenizer.apply_chat_template(  # type: ignore
             messages, tokenize=False, add_generation_prompt=True
         )
-        model_inputs = self.tokenizer([text_chat], return_tensors="pt").to(self.model.device)
+        model_inputs = current_tokenizer([text_chat], return_tensors="pt").to(current_model.device)
 
         with torch.inference_mode():
-            generated_ids = self.model.generate(
+            generated_ids = current_model.generate(
                 **model_inputs, max_new_tokens=self.llm_config["max_tokens"], do_sample=False
             )
-
-        self.current_model_index = (self.current_model_index + 1) % len(
-            self.llm_config["model_names"]
-        )
 
         generated_ids = [
             output_ids[len(input_ids) :]
             for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids, strict=False)
         ]
 
-        response = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        response = current_tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
 
-        del generated_ids
-        torch.cuda.empty_cache()
-        gc.collect()
+        self.current_model_index = (self.current_model_index + 1) % len(
+            self.llm_config["model_names"]
+        )
+
+        if self.llm_config["save_memory"]:
+            del generated_ids
+            torch.cuda.empty_cache()
+            gc.collect()
 
         return response
 
@@ -188,6 +204,7 @@ class LocalModelAgent(Agent, ABC):
         Returns:
             bool: Whether the prediction is correct.
         """
+
         if correctness:
             question = self.inputs[-1]
             answer = self.self_outputs[-1]
@@ -412,6 +429,7 @@ if __name__ == "__main__":
         raise ValueError(msg)
 
     config = {
+        "save_memory": True,
         "dynamo_backend": "tensorrt",
         "exp_name": f"mam_streamicl_{args.bench_name}_nf4",
         "bench_name": args.bench_name,
