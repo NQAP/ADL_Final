@@ -4,18 +4,92 @@ import warnings
 from abc import ABC, abstractmethod
 from typing import override
 
+import faiss
+import numpy
 import torch
 from accelerate import Accelerator
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from transformers import logging as transformers_logging
 
 from base import Agent
 from execution_pipeline import main
-from utils import RAG, strip_all_lines
+from utils import RetrieveOrder, strip_all_lines
 
 # Ignore warning messages from transformers
 warnings.filterwarnings("ignore")
 transformers_logging.set_verbosity_error()
+
+
+class RAG:
+    def __init__(self, rag_config: dict) -> None:
+        self.embed_model = AutoModel.from_pretrained(
+            rag_config["embedding_model"],
+            **rag_config["embedding_model_kwargs"],
+            trust_remote_code=True,
+        ).eval()
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            rag_config["embedding_model"], trust_remote_code=True
+        )
+
+        self.index = None
+        self.id2evidence = {}
+        self.embed_dim = len(self.encode_data("Test embedding size"))
+        self.insert_acc = 0
+
+        self.seed = rag_config["seed"]
+        self.top_k = rag_config["top_k"]
+        orders = {member.value for member in RetrieveOrder}
+        assert rag_config["order"] in orders
+        self.retrieve_order = rag_config["order"]
+        random.seed(self.seed)
+
+        self.create_faiss_index()
+        # TODO: make a file to save the inserted rows
+
+    def create_faiss_index(self):
+        self.index = faiss.IndexFlatL2(self.embed_dim)
+
+    def encode_data(self, sentence: str) -> numpy.ndarray:
+        # Tokenize the sentence
+        encoded_input = self.tokenizer(
+            [sentence], padding=True, truncation=True, return_tensors="pt"
+        )
+        # Compute token embeddings
+        with torch.inference_mode():
+            model_output = self.embed_model(**encoded_input)
+            # Perform pooling. In this case, cls pooling.
+            sentence_embeddings = model_output[0][:, 0]
+        feature = sentence_embeddings.numpy()[0]
+        norm = numpy.linalg.norm(feature)
+        return feature / norm
+
+    def insert(self, key: str, value: str) -> None:
+        """Use the key text as the embedding for future retrieval of the value text."""
+        embedding = self.encode_data(key).astype("float32")  # Ensure the data type is float32
+        self.index.add(numpy.expand_dims(embedding, axis=0))
+        self.id2evidence[str(self.insert_acc)] = value
+        self.insert_acc += 1
+
+    def retrieve(self, query: str, top_k: int) -> list[str]:
+        """Retrieve top-k text chunks"""
+        embedding = self.encode_data(query).astype("float32")  # Ensure the data type is float32
+        top_k = min(top_k, self.insert_acc)
+        distances, indices = self.index.search(numpy.expand_dims(embedding, axis=0), top_k)
+        distances = distances[0].tolist()
+        indices = indices[0].tolist()
+
+        results = [
+            {"link": str(idx), "_score": {"faiss": dist}}
+            for dist, idx in zip(distances, indices, strict=False)
+        ]
+        # Re-order the sequence based on self.retrieve_order
+        if self.retrieve_order == RetrieveOrder.SIMILAR_AT_BOTTOM.value:
+            results = list(reversed(results))
+        elif self.retrieve_order == RetrieveOrder.RANDOM.value:
+            random.shuffle(results)
+
+        text_list = [self.id2evidence[result["link"]] for result in results]
+        return text_list
 
 
 class LocalModelAgent(Agent, ABC):
@@ -313,6 +387,10 @@ if __name__ == "__main__":
             "seed": 0,
             "top_k": 5,
             "order": "similar_at_top",
+            "embedding_model_kwargs": {
+                "use_memory_efficient_attention": False,
+                "unpad_inputs": False,
+            },
         },
     }
     bench_cfg = {"bench_name": args.bench_name, "output_path": f"{args.bench_name}.csv"}
