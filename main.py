@@ -1,6 +1,7 @@
 import gc
 import random
 import re
+import textwrap
 import warnings
 from abc import ABC, abstractmethod
 from typing import override
@@ -20,7 +21,7 @@ from transformers import logging as transformers_logging
 
 from base import Agent
 from execution_pipeline import main
-from utils import RetrieveOrder, strip_all_lines
+from utils import RetrieveOrder
 
 # Ignore warning messages from transformers
 warnings.filterwarnings("ignore")
@@ -229,18 +230,16 @@ class ClassificationAgent(LocalModelAgent):
 
     @staticmethod
     def get_system_prompt() -> str:
-        system_prompt = """
+        return textwrap.dedent("""
         Act as a professional medical doctor that can diagnose the patient
         based on the patient profile. Provide your diagnosis in the following
         format: <number>. <diagnosis>
-        """.strip()
-
-        return strip_all_lines(system_prompt)
+        """).strip()
 
     @staticmethod
     def get_zeroshot_prompt(option_text: str, text: str) -> str:
-        prompt = f"""
-        Act as a medical doctor and diagnose the patient based on the following patient profile:
+        return textwrap.dedent(f"""
+        Diagnose the patient based on the following patient profile:
 
         {text}
 
@@ -249,19 +248,19 @@ class ClassificationAgent(LocalModelAgent):
 
         {option_text}
 
-        Now, directly provide the diagnosis for the patient in the following format:
+        Even if there's no diagnosis that perfectly matches the patient profile, you should still
+        choose the most possible one from the list. Now, directly provide the diagnosis for the
+        patient in the following format:
         <number>. <diagnosis>
-        """.strip()
-
-        return strip_all_lines(prompt)
+        """).strip()
 
     @staticmethod
     def get_fewshot_template(
         option_text: str,
         text: str,
     ) -> str:
-        prompt = f"""
-        Act as a medical doctor and diagnose the patient based on the provided patient profile.
+        return textwrap.dedent(f"""
+        Diagnose the patient based on the provided patient profile.
 
         All possible diagnoses for you to choose from are as follows (one diagnosis per line,
         in the format of <number>. <diagnosis>):
@@ -275,13 +274,8 @@ class ClassificationAgent(LocalModelAgent):
 
         {text}
 
-        Even if there's no diagnosis that perfectly matches the patient profile, you should still
-        choose one diagnosis from the list. Now provide the diagnosis for the patient in the
-        following format:
-        <number>. <diagnosis>
-        """.strip()
-
-        return strip_all_lines(prompt)
+        Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>
+        """).strip()
 
     @staticmethod
     def extract_label(pred_text: str, label2desc: dict[int, str]) -> str:
@@ -305,12 +299,12 @@ class ClassificationAgent(LocalModelAgent):
 
     @staticmethod
     def get_shot_template() -> str:
-        prompt = """
+        prompt = textwrap.dedent("""
         {question}
         Diagnosis: {answer}
-        """.strip()
+        """).strip()
 
-        return strip_all_lines(prompt)
+        return prompt
 
     @override
     def __call__(self, label2desc: dict[int, str], text: str) -> str:
@@ -443,7 +437,7 @@ if __name__ == "__main__":
         "rag": {
             "embedding_model": "dunzhang/stella_en_400M_v5",
             "top_k": 5,
-            "order": "similar_at_top",
+            "order": "similar_at_bottom",
             "embedding_model_kwargs": {
                 "use_memory_efficient_attention": False,
                 "unpad_inputs": False,
