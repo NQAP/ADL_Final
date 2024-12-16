@@ -107,12 +107,16 @@ class LocalModelAgent(Agent, ABC):
 
         self.accelerator = Accelerator(dynamo_backend=self.llm_config["dynamo_backend"])
 
-        bnb_config = BitsAndBytesConfig(load_in_8bit=True)
-
         self.model = AutoModelForCausalLM.from_pretrained(
             self.llm_config["model_name"],
-            quantization_config=bnb_config,
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+            ),
             device_map="cuda:0",
+            max_memory={0: "10G"},
         )
         self.model.eval()
         self.model = self.accelerator.prepare(self.model)
@@ -358,6 +362,9 @@ class SQLGenerationAgent(Agent):
 
 
 if __name__ == "__main__":
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.set_float32_matmul_precision("high")
+
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
@@ -377,8 +384,8 @@ if __name__ == "__main__":
     model_name = "google/gemma-2-9b-it"
 
     config = {
-        "dynamo_backend": "inductor",
-        "exp_name": f"self_streamicl_{args.bench_name}_{model_name}_8bit",
+        "dynamo_backend": "tensorrt",
+        "exp_name": f"self_streamicl_{args.bench_name}_{model_name}_nf4",
         "bench_name": args.bench_name,
         "model_name": model_name,
         "max_tokens": max_tokens,
@@ -394,6 +401,9 @@ if __name__ == "__main__":
         },
     }
     bench_cfg = {"bench_name": args.bench_name, "output_path": f"{args.bench_name}.csv"}
+
+    if config["dynamo_backend"] == "tensorrt":
+        import torch_tensorrt  # noqa: F401
 
     agent = agent_name(config)
     main(agent, bench_cfg, use_wandb=True, wandb_name=config["exp_name"], wandb_config=config)
