@@ -231,15 +231,14 @@ class ClassificationAgent(LocalModelAgent):
             prompt = prompt_zeroshot
 
         messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": f"{system_prompt}\n{prompt}"},
         ]
         response = self.generate_response(messages)
         prediction = self.extract_label(response, label2desc)
 
         self.update_log_info(
             log_data={
-                "input_pred": messages[1]["content"],
+                "input_pred": messages[0]["content"],
                 "output_pred": response,
                 "num_shots": str(len(shots)),
             }
@@ -301,7 +300,7 @@ if __name__ == "__main__":
         msg = f"Invalid benchmark name: {args.bench_name}"
         raise ValueError(msg)
 
-    model_name = "Qwen/Qwen2.5-7B-Instruct"
+    model_name = "google/gemma-2-9b-it"
 
     bench_cfg = {"bench_name": args.bench_name}
     config = {
