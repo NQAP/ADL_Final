@@ -298,7 +298,7 @@ class SQLGenerationAgent(LocalModelAgent):
 
         {{fewshot_text}}
 
-        Now it's your turn.
+        Now it's your turn. 
 
         -- SQL schema: {schema}
         -- Using valid SQLite, answer the following question for the SQL schema provided above.
@@ -394,6 +394,7 @@ if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser.add_argument("--bench_name", type=str, required=True)
+    parser.add_argument("--output_path", type=str, required=True)
     args = parser.parse_args()
 
     if args.bench_name.startswith("classification"):
@@ -406,9 +407,9 @@ if __name__ == "__main__":
         msg = f"Invalid benchmark name: {args.bench_name}"
         raise ValueError(msg)
 
-    model_name = "prince-canuma/Ministral-8B-Instruct-2410-HF"
+    model_name = "meta-llama/Llama-3.1-8B-Instruct"
 
-    bench_cfg = {"bench_name": args.bench_name}
+    bench_cfg = {"bench_name": args.bench_name, "output_path": args.output_path}
     config = {
         **bench_cfg,
         "dynamo_backend": "inductor",
