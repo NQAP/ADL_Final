@@ -250,18 +250,83 @@ class ClassificationAgent(LocalModelAgent):
         return prediction
 
 
-class SQLGenerationAgent(Agent):
+class SQLGenerationAgent(LocalModelAgent):
     """
     An agent that generates SQL code based on the given table schema and the user query.
     """
+    @staticmethod
+    def get_shot_template() -> str:
+        prompt = """
+        Question: {{question}}
+        {{answer}}
+        """.strip()
+
+        return strip_all_lines(prompt)
 
     def __init__(self, config: dict) -> None:
         """
-        Initialize your LLM here
+        Initialize the SQL generation agent.
         """
-        # TODO
-        raise NotImplementedError
+        super().__init__(config)
+        self.schema_shot_template = """
+        Schema:
+        {schema}
 
+        Question:
+        {question}
+
+        SQL:
+        {sql}
+        """.strip()
+
+    def get_fewshot_template(self, schema: str, query: str) -> str:
+        """
+        Generate a Few-Shot Prompt Template for SQL generation.
+
+        Args:
+            schema (str): The schema of the database table.
+            query (str): The user's question.
+
+        Returns:
+            str: A formatted few-shot prompt.
+        """
+        prompt_template = f"""
+        You are performing the text-to-SQL task. Here are some examples:
+
+        {{fewshot_text}}
+
+        Now it's your turn.
+
+        -- SQL schema: {schema}
+        -- Using valid SQLite, answer the following question for the SQL schema provided above.
+        -- Question: {query}
+
+        Now, generate the correct SQL code directly (Do NOT generate other text except the SQL code): 
+        """.strip()
+        return strip_all_lines(prompt_template)
+
+    def get_zeroshot_prompt(self, schema: str, query: str) -> str:
+        """
+        Generate a Zero-Shot Prompt for SQL generation.
+
+        Args:
+            schema (str): The schema of the database table.
+            query (str): The user's question.
+
+        Returns:
+            str: A formatted zero-shot prompt.
+        """
+        prompt = f"""
+        {schema}
+
+        -- Using valid SQLite, answer the following question for the tables provided above.
+        -- Question: {query}
+
+        Now, generate the correct SQL code directly (Do NOT generate other text except the SQL code):
+        """.strip()
+        return strip_all_lines(prompt)
+
+    @override
     def __call__(self, table_schema: str, user_query: str) -> str:
         """
         Generate SQL code based on the given table schema and the user query.
@@ -273,15 +338,42 @@ class SQLGenerationAgent(Agent):
         Returns:
             str: The SQL code that the LLM generates.
         """
-        # TODO: Note that your output should be a valid SQL code only.
-        raise NotImplementedError
+        # Retrieve relevant shots using RAG
+        shots = (
+            self.rag.retrieve(query=user_query, top_k=self.rag.top_k) if (self.rag.insert_acc > 0)
+            else []
+        )
+        print(f"Retrieved {len(shots)} shots for RAG.")
 
-    def update(self, correctness: bool) -> bool:
-        """
-        Update your LLM agent based on the correctness of its own SQL code at the current time step.
-        """
-        # TODO
-        raise NotImplementedError
+        # If shots are found, format them for few-shot learning
+
+        prompt_fewshot = self.get_fewshot_template(table_schema, user_query)
+        prompt_zeroshot = self.get_zeroshot_prompt(table_schema, user_query)
+
+        if len(shots):
+            fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
+            try:
+                prompt = re.sub(
+                    pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot
+                )
+            except Exception as e:
+                print(f"Error ```{e}``` caused by these shots. Using the zero-shot prompt.")
+                prompt = prompt_zeroshot
+        else:
+            print("No RAG shots found. Using zeroshot prompt.")
+            prompt = prompt_zeroshot
+
+        messages = [{"role": "user", "content": prompt}]
+        response = self.generate_response(messages)
+
+        return response
+
+    # def update(self, correctness: bool) -> bool:
+    #     """
+    #     Update your LLM agent based on the correctness of its own SQL code at the current time step.
+    #     """
+    #     # TODO
+    #     raise NotImplementedError
 
 
 if __name__ == "__main__":
@@ -308,7 +400,7 @@ if __name__ == "__main__":
         **bench_cfg,
         "dynamo_backend": "inductor",
         "exp_name": f"self_streamicl_{args.bench_name}_{model_name}_8bit",
-        "bench_namw": bench_cfg["bench_name"],
+        "bench_name": bench_cfg["bench_name"],
         "model_name": model_name,
         "max_tokens": max_tokens,
         "rag": {
