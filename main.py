@@ -112,7 +112,7 @@ class LocalModelAgent(Agent, ABC):
         self.models = {}
         self.tokenizers = {}
 
-        if not self.llm_config["save_memory"]:
+        if not self.llm_config["save_memory"] or len(self.llm_config["model_names"]) == 1:
             for i, _ in enumerate(self.llm_config["model_names"]):
                 self.prepare_model(i)
 
@@ -157,7 +157,7 @@ class LocalModelAgent(Agent, ABC):
         Generate a response using the local model.
         """
 
-        if self.llm_config["save_memory"]:
+        if self.llm_config["save_memory"] and len(self.llm_config["model_names"]) > 1:
             self.prepare_model(self.current_model_index)
             assert len(self.models) == 1
 
