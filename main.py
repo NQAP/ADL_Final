@@ -302,12 +302,10 @@ if __name__ == "__main__":
 
     model_name = "google/gemma-2-9b-it"
 
-    bench_cfg = {"bench_name": args.bench_name}
     config = {
-        **bench_cfg,
         "dynamo_backend": "inductor",
         "exp_name": f"self_streamicl_{args.bench_name}_{model_name}_8bit",
-        "bench_namw": bench_cfg["bench_name"],
+        "bench_name": args.bench_name,
         "model_name": model_name,
         "max_tokens": max_tokens,
         "rag": {
@@ -317,5 +315,7 @@ if __name__ == "__main__":
             "order": "similar_at_top",
         },
     }
+    bench_cfg = {"bench_name": args.bench_name, "output_path": f"{args.bench_name}.csv"}
+
     agent = agent_name(config)
     main(agent, bench_cfg, use_wandb=True, wandb_name=config["exp_name"], wandb_config=config)
