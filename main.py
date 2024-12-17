@@ -1,7 +1,6 @@
 import gc
 import random
 import re
-import textwrap
 import warnings
 from abc import ABC, abstractmethod
 from typing import override
@@ -15,13 +14,12 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    set_seed,
 )
 from transformers import logging as transformers_logging
 
 from base import Agent
 from execution_pipeline import main
-from utils import RetrieveOrder
+from utils import RetrieveOrder, strip_all_lines
 
 # Ignore warning messages from transformers
 warnings.filterwarnings("ignore")
@@ -44,10 +42,12 @@ class RAG:
         self.embed_dim = len(self.encode_data("Test embedding size"))
         self.insert_acc = 0
 
+        self.seed = rag_config["seed"]
         self.top_k = rag_config["top_k"]
         orders = {member.value for member in RetrieveOrder}
         assert rag_config["order"] in orders
         self.retrieve_order = rag_config["order"]
+        random.seed(self.seed)
 
         self.create_faiss_index()
         # TODO: make a file to save the inserted rows
@@ -59,13 +59,13 @@ class RAG:
         # Tokenize the sentence
         encoded_input = self.tokenizer(
             [sentence], padding=True, truncation=True, return_tensors="pt"
-        )
+        ).to(self.embed_model.device)
         # Compute token embeddings
         with torch.inference_mode():
             model_output = self.embed_model(**encoded_input)
             # Perform pooling. In this case, cls pooling.
-            sentence_embeddings = model_output[0][:, 0]
-        feature = sentence_embeddings.numpy()[0]
+            sentence_embeddings = model_output[0][:, 0].cpu().numpy()
+        feature = sentence_embeddings[0]
         norm = numpy.linalg.norm(feature)
         return feature / norm
 
@@ -100,7 +100,7 @@ class RAG:
 
 class LocalModelAgent(Agent, ABC):
     """
-    A base agent that uses a local model for text generation tasks.
+    A base agent that uses multiple models for text generation tasks.
     """
 
     def __init__(self, config: dict) -> None:
@@ -190,6 +190,13 @@ class LocalModelAgent(Agent, ABC):
             self.llm_config["model_names"]
         )
 
+        self.update_log_info(
+            log_data={
+                "num_input_tokens": len(current_tokenizer.encode(messages[0]["content"])),
+                "num_output_tokens": len(current_tokenizer.encode(response)),
+            }
+        )
+
         if self.llm_config["save_memory"]:
             del generated_ids
             torch.cuda.empty_cache()
@@ -230,52 +237,56 @@ class ClassificationAgent(LocalModelAgent):
 
     @staticmethod
     def get_system_prompt() -> str:
-        return textwrap.dedent("""
-        Act as a professional medical doctor that can diagnose the patient
-        based on the patient profile. Provide your diagnosis in the following
-        format: <number>. <diagnosis>
-        """).strip()
+        return strip_all_lines(
+            """\
+            Act as a professional medical doctor that can diagnose the patient
+            based on the patient profile. Provide your diagnosis in the following
+            format: <number>. <diagnosis>
+            """.strip()
+        )
 
     @staticmethod
     def get_zeroshot_prompt(option_text: str, text: str) -> str:
-        return textwrap.dedent(f"""
-        Diagnose the patient based on the following patient profile:
+        return strip_all_lines(
+            f"""
+            Act as a medical doctor and diagnose the patient based on the following patient profile:
 
-        {text}
+            {text}
 
-        All possible diagnoses for you to choose from are as follows (one diagnosis per line,
-        in the format of <number>. <diagnosis>):
+            All possible diagnoses for you to choose from are as follows (one diagnosis per line,
+            in the format of <number>. <diagnosis>):
 
-        {option_text}
+            {option_text}
 
-        Even if there's no diagnosis that perfectly matches the patient profile, you should still
-        choose the most possible one from the list. Now, directly provide the diagnosis for the
-        patient in the following format:
-        <number>. <diagnosis>
-        """).strip()
+            Now, directly provide the diagnosis for the patient in the following format:
+            <number>. <diagnosis>
+            """.strip()
+        )
 
     @staticmethod
     def get_fewshot_template(
         option_text: str,
         text: str,
     ) -> str:
-        return textwrap.dedent(f"""
-        Diagnose the patient based on the provided patient profile.
+        return strip_all_lines(
+            f"""\
+            Act as a medical doctor and diagnose the patient based on the provided patient profile.
 
-        All possible diagnoses for you to choose from are as follows (one diagnosis per line,
-        in the format of <number>. <diagnosis>):
-        {option_text}
+            All possible diagnoses for you to choose from are as follows (one diagnosis per line,
+            in the format of <number>. <diagnosis>):
+            {option_text}
 
-        Here are some example cases.
+            Here are some example cases.
 
-        {{fewshot_text}}
+            {{fewshot_text}}
 
-        Now it's your turn.
+            Now it's your turn.
 
-        {text}
+            {text}
 
-        Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>
-        """).strip()
+            Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>
+            """.strip()
+        )
 
     @staticmethod
     def extract_label(pred_text: str, label2desc: dict[int, str]) -> str:
@@ -299,12 +310,12 @@ class ClassificationAgent(LocalModelAgent):
 
     @staticmethod
     def get_shot_template() -> str:
-        prompt = textwrap.dedent("""
+        prompt = """
         {question}
         Diagnosis: {answer}
-        """).strip()
+        """.strip()
 
-        return prompt
+        return strip_all_lines(prompt)
 
     @override
     def __call__(self, label2desc: dict[int, str], text: str) -> str:
@@ -342,13 +353,7 @@ class ClassificationAgent(LocalModelAgent):
 
         if len(shots):
             fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
-            try:
-                prompt = re.sub(
-                    pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot
-                )
-            except Exception as e:
-                print(f"Error ```{e}``` caused by these shots. Using the zero-shot prompt.")
-                prompt = prompt_zeroshot
+            prompt = prompt_fewshot.format(fewshot_text=fewshot_text)
         else:
             print("No RAG shots found. Using zeroshot prompt.")
             prompt = prompt_zeroshot
@@ -427,17 +432,17 @@ if __name__ == "__main__":
         raise ValueError(msg)
 
     config = {
-        "save_memory": True,
+        "save_memory": False,
         "dynamo_backend": "tensorrt",
-        "exp_name": f"mam_streamicl_{args.bench_name}_nf4",
+        "exp_name": f"self_streamicl_{args.bench_name}_gemma2_nf4",
         "bench_name": args.bench_name,
-        "model_names": ["Qwen/Qwen2.5-7B-Instruct", "google/gemma-2-9b-it"],
+        "model_names": ["google/gemma-2-9b-it"],
         "max_tokens": max_tokens,
-        "seed": 0,
         "rag": {
             "embedding_model": "dunzhang/stella_en_400M_v5",
+            "seed": 0,
             "top_k": 5,
-            "order": "similar_at_bottom",
+            "order": "similar_at_top",
             "embedding_model_kwargs": {
                 "use_memory_efficient_attention": False,
                 "unpad_inputs": False,
@@ -448,8 +453,6 @@ if __name__ == "__main__":
         "bench_name": args.bench_name,
         "output_path": f"{args.bench_name}/{config['exp_name']}.csv",
     }
-
-    set_seed(config["seed"])
 
     if config["dynamo_backend"] == "tensorrt":
         import torch_tensorrt  # noqa: F401
