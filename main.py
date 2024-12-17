@@ -238,18 +238,18 @@ class ClassificationAgent(LocalModelAgent):
 
     @staticmethod
     def get_system_prompt() -> str:
-        return textwrap.dedent(
+        return strip_all_lines(
             """\
             Act as a professional medical doctor that can diagnose the patient
             based on the patient profile. Provide your diagnosis in the following
             format: <number>. <diagnosis>
-            """
+            """.strip()
         )
 
     @staticmethod
     def get_zeroshot_prompt(option_text: str, text: str) -> str:
-        return textwrap.dedent(
-            f"""\
+        return strip_all_lines(
+            f"""
             Act as a medical doctor and diagnose the patient based on the following patient profile:
 
             {text}
@@ -261,7 +261,7 @@ class ClassificationAgent(LocalModelAgent):
 
             Now, directly provide the diagnosis for the patient in the following format:
             <number>. <diagnosis>
-            """
+            """.strip()
         )
 
     @staticmethod
@@ -269,7 +269,7 @@ class ClassificationAgent(LocalModelAgent):
         option_text: str,
         text: str,
     ) -> str:
-        return textwrap.dedent(
+        return strip_all_lines(
             f"""\
             Act as a medical doctor and diagnose the patient based on the provided patient profile.
 
@@ -286,7 +286,7 @@ class ClassificationAgent(LocalModelAgent):
             {text}
 
             Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>
-            """
+            """.strip()
         )
 
     @staticmethod
