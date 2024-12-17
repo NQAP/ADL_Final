@@ -257,11 +257,8 @@ class SQLGenerationAgent(LocalModelAgent):
     @staticmethod
     def get_shot_template() -> str:
         prompt = """
-
-        Question: {{question}}
-
-        {{answer}}
-
+        --Question: {{question}}
+        Answer: {{answer}}
         """.strip()
 
         return strip_all_lines(prompt)
@@ -271,16 +268,15 @@ class SQLGenerationAgent(LocalModelAgent):
         Initialize the SQL generation agent.
         """
         super().__init__(config)
-        self.schema_shot_template = """
-        Schema:
-        {schema}
 
-        Question:
-        {question}
-
-        SQL:
-        {answer}
+    @staticmethod
+    def get_system_prompt() -> str:
+        system_prompt = """
+        You are a helpful AI assistant. You can translate question into a SQL query
+        for the given schemas.
         """.strip()
+
+        return strip_all_lines(system_prompt)
 
     def get_fewshot_template(self, schema: str, query: str) -> str:
         """
@@ -298,13 +294,15 @@ class SQLGenerationAgent(LocalModelAgent):
 
         {{fewshot_text}}
 
-        Now it's your turn. 
+        Now it's your turn.
 
+        Given the following database schema
         -- SQL schema: {schema}
-        -- Using valid SQLite, answer the following question for the SQL schema provided above.
+
+        -- Using valid SQLite, answer the following question and with no explanation.
         -- Question: {query}
 
-        Now, generate the correct SQL code directly (Do NOT generate other text except the SQL code): 
+        Now, generate the correct SQL code directly (Do NOT generate other text except the SQL code):
         """.strip()
         return strip_all_lines(prompt_template)
 
@@ -320,9 +318,12 @@ class SQLGenerationAgent(LocalModelAgent):
             str: A formatted zero-shot prompt.
         """
         prompt = f"""
-        {schema}
+        You are performing the text-to-SQL task.
 
-        -- Using valid SQLite, answer the following question for the tables provided above.
+        Given the following database schema
+        -- SQL schema: {schema}
+
+        -- Using valid SQLite, answer the following question and with no explanation.
         -- Question: {query}
 
         Now, generate the correct SQL code directly (Do NOT generate other text except the SQL code):
@@ -350,6 +351,7 @@ class SQLGenerationAgent(LocalModelAgent):
 
         # If shots are found, format them for few-shot learning
 
+        system_prompt = self.get_system_prompt()
         prompt_fewshot = self.get_fewshot_template(table_schema, user_query)
         prompt_zeroshot = self.get_zeroshot_prompt(table_schema, user_query)
 
@@ -366,12 +368,15 @@ class SQLGenerationAgent(LocalModelAgent):
             print("No RAG shots found. Using zeroshot prompt.")
             prompt = prompt_zeroshot
 
-        messages = [{"role": "user", "content": prompt}]
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
         response = self.generate_response(messages)
 
         self.update_log_info(
             log_data={
-                "input_pred": messages[0]["content"],
+                "input_pred": messages[1]["content"],
                 "output_pred": response,
                 "num_shots": str(len(shots)),
             }
@@ -380,13 +385,6 @@ class SQLGenerationAgent(LocalModelAgent):
         self.self_outputs.append(f"{response!s}.")
 
         return response
-
-    # def update(self, correctness: bool) -> bool:
-    #     """
-    #     Update your LLM agent based on the correctness of its own SQL code at the current time step.
-    #     """
-    #     # TODO
-    #     raise NotImplementedError
 
 
 if __name__ == "__main__":
@@ -402,7 +400,7 @@ if __name__ == "__main__":
         max_tokens = 32
     elif args.bench_name.startswith("sql_generation"):
         agent_name = SQLGenerationAgent
-        max_tokens = 512
+        max_tokens = 1024
     else:
         msg = f"Invalid benchmark name: {args.bench_name}"
         raise ValueError(msg)
@@ -420,7 +418,7 @@ if __name__ == "__main__":
         "rag": {
             "embedding_model": "dunzhang/stella_en_400M_v5",
             "seed": 0,
-            "top_k": 5,
+            "top_k": 16,
             "order": "similar_at_top",
         },
     }
