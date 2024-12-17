@@ -230,46 +230,52 @@ class ClassificationAgent(LocalModelAgent):
 
     @staticmethod
     def get_system_prompt() -> str:
-        return textwrap.dedent("""
-        Act as a professional medical doctor that can diagnose the patient based on the patient profile.
-        Provide your diagnosis in the following format: <number>. <diagnosis>
-        """).strip()  # noqa: E501
+        return textwrap.dedent(
+            """
+            Act as a professional medical doctor that can diagnose the patient based on the patient profile.
+            Provide your diagnosis in the following format: <number>. <diagnosis>
+            """  # noqa: E501
+        ).strip()
 
     @staticmethod
     def get_zeroshot_prompt(option_text: str, text: str) -> str:
-        return textwrap.dedent(f"""
-        Act as a medical doctor and diagnose the patient based on the following patient profile:
+        return textwrap.dedent(
+            f"""
+            Act as a medical doctor and diagnose the patient based on the following patient profile:
 
-        {text}
+            {text}
 
-        All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
+            All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
 
-        {option_text}
+            {option_text}
 
-        Now, directly provide the diagnosis for the patient in the following format: <number>. <diagnosis>
-        """).strip()  # noqa: E501
+            Now, directly provide the diagnosis for the patient in the following format: <number>. <diagnosis>
+            """  # noqa: E501
+        ).strip()
 
     @staticmethod
     def get_fewshot_template(
         option_text: str,
         text: str,
     ) -> str:
-        return textwrap.dedent(f"""
-        Act as a medical doctor and diagnose the patient based on the provided patient profile:
+        return textwrap.dedent(
+            f"""
+            Act as a medical doctor and diagnose the patient based on the provided patient profile:
 
-        All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
-        {option_text}
+            All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
+            {option_text}
 
-        Here are some example cases.
+            Here are some example cases.
 
-        {{fewshot_text}}
+            {{fewshot_text}}
 
-        Now it's your turn.
+            Now it's your turn.
 
-        {text}
+            {text}
 
-        Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>
-        """).strip()  # noqa: E501
+            Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>
+            """  # noqa: E501
+        ).strip()
 
     @staticmethod
     def extract_label(pred_text: str, label2desc: dict[int, str]) -> str:
@@ -293,10 +299,12 @@ class ClassificationAgent(LocalModelAgent):
 
     @staticmethod
     def get_shot_template() -> str:
-        prompt = textwrap.dedent("""
-        {question}
-        Diagnosis: {answer}
-        """).strip()
+        prompt = textwrap.dedent(
+            """
+            {question}
+            Diagnosis: {answer}
+            """
+        ).strip()
 
         return prompt
 
@@ -330,19 +338,22 @@ class ClassificationAgent(LocalModelAgent):
         prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
         prompt_fewshot = self.get_fewshot_template(option_text, text)
 
+        query = textwrap.dedent(
+            f"""
+            Instruct: Given a patient profile, retrieve relevant diagnoses that match the profile.
+            Query: {text}
+            """
+        ).strip()
+
         shots = (
-            self.rag.retrieve(query=text, top_k=self.rag.top_k) if (self.rag.insert_acc > 0) else []
+            self.rag.retrieve(query=query, top_k=self.rag.top_k)
+            if (self.rag.insert_acc > 0)
+            else []
         )
 
         if len(shots):
             fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
-            try:
-                prompt = re.sub(
-                    pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot
-                )
-            except Exception as e:
-                print(f"Error ```{e}``` caused by these shots. Using the zero-shot prompt.")
-                prompt = prompt_zeroshot
+            prompt = prompt_fewshot.format(fewshot_text=fewshot_text)
         else:
             print("No RAG shots found. Using zeroshot prompt.")
             prompt = prompt_zeroshot
@@ -428,14 +439,14 @@ if __name__ == "__main__":
     config = {
         "save_memory": True,
         "dynamo_backend": "tensorrt",
-        "exp_name": f"mam_streamicl_{args.bench_name}_nf4",
+        "exp_name": f"self_streamicl_{args.bench_name}_gemma2_nf4",
         "bench_name": args.bench_name,
-        "model_names": ["Qwen/Qwen2.5-7B-Instruct", "google/gemma-2-9b-it"],
+        "model_names": ["google/gemma-2-9b-it"],
         "max_tokens": max_tokens,
         "seed": 0,
         "rag": {
             "embedding_model": "dunzhang/stella_en_400M_v5",
-            "top_k": 5,
+            "top_k": 10,
             "order": "similar_at_bottom",
             "embedding_model_kwargs": {
                 "use_memory_efficient_attention": False,
