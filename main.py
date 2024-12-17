@@ -255,82 +255,64 @@ class SQLGenerationAgent(LocalModelAgent):
     An agent that generates SQL code based on the given table schema and the user query.
     """
     @staticmethod
-    def get_shot_template() -> str:
-        prompt = """
-        --Question: {{question}}
-        Answer: {{answer}}
-        """.strip()
-
-        return strip_all_lines(prompt)
-
-    def __init__(self, config: dict) -> None:
-        """
-        Initialize the SQL generation agent.
-        """
-        super().__init__(config)
+    def get_system_prompt() -> str:
+        return strip_all_lines(
+            """
+            Act as a professional programmer.
+            You will be given a table schema and a user query, and you need to generate
+            the correct SQL code to answer the user query in the following format:
+            ```sql
+            <your_SQL_code>
+            ```
+            """
+        )
 
     @staticmethod
-    def get_system_prompt() -> str:
-        system_prompt = """
-        You are a helpful AI assistant. You can translate question into a SQL query
-        for the given schemas.
-        """.strip()
+    def get_zeroshot_prompt(table_schema: str, user_query: str) -> str:
+        return strip_all_lines(
+            f"""\
+            {table_schema}
 
-        return strip_all_lines(system_prompt)
+            -- Using valid SQLite, answer the following question for the tables provided above.
+            -- Question: {user_query}
 
-    def get_fewshot_template(self, schema: str, query: str) -> str:
-        """
-        Generate a Few-Shot Prompt Template for SQL generation.
+            Now, generate the correct SQL code directly in the following format:
+            ```sql
+            <your_SQL_code>
+            ```
+            """.strip()
+        )
 
-        Args:
-            schema (str): The schema of the database table.
-            query (str): The user's question.
+    @staticmethod
+    def get_shot_template() -> str:
+        return strip_all_lines(
+            """
+            Question: {{question}}
+            {{answer}}
+            """.strip()
+        )
 
-        Returns:
-            str: A formatted few-shot prompt.
-        """
-        prompt_template = f"""
-        You are performing the text-to-SQL task. Here are some examples:
+    @staticmethod
+    def get_fewshot_template(table_schema: str, user_query: str) -> str:
+        return strip_all_lines(
+            f"""
+            You are performing the text-to-SQL task. Here are some examples:
 
-        {{fewshot_text}}
+            {{fewshot_text}}
 
-        Now it's your turn.
+            Now it's your turn.
 
-        Given the following database schema
-        -- SQL schema: {schema}
+            -- SQL schema: {table_schema}
+            -- Using valid SQLite, answer the following question for the SQL schema provided above.
+            -- Question: {user_query}
 
-        -- Using valid SQLite, answer the following question and with no explanation.
-        -- Question: {query}
+            Now, generate the correct SQL code directly in the following format:
+            ```sql
+            <your_SQL_code>
+            ```
+            """
+        )
 
-        Now, generate the correct SQL code directly (Do NOT generate other text except the SQL code):
-        """.strip()
-        return strip_all_lines(prompt_template)
-
-    def get_zeroshot_prompt(self, schema: str, query: str) -> str:
-        """
-        Generate a Zero-Shot Prompt for SQL generation.
-
-        Args:
-            schema (str): The schema of the database table.
-            query (str): The user's question.
-
-        Returns:
-            str: A formatted zero-shot prompt.
-        """
-        prompt = f"""
-        You are performing the text-to-SQL task.
-
-        Given the following database schema
-        -- SQL schema: {schema}
-
-        -- Using valid SQLite, answer the following question and with no explanation.
-        -- Question: {query}
-
-        Now, generate the correct SQL code directly (Do NOT generate other text except the SQL code):
-        """.strip()
-        return strip_all_lines(prompt)
-
-    @override
     def __call__(self, table_schema: str, user_query: str) -> str:
         """
         Generate SQL code based on the given table schema and the user query.
@@ -342,49 +324,58 @@ class SQLGenerationAgent(LocalModelAgent):
         Returns:
             str: The SQL code that the LLM generates.
         """
-        # Retrieve relevant shots using RAG
+
+        self.reset_log_info()
+        system_prompt = self.get_system_prompt()
+        prompt_zeroshot = self.get_zeroshot_prompt(table_schema, user_query)
+        prompt_fewshot = self.get_fewshot_template(table_schema, user_query)
+
         shots = (
-            self.rag.retrieve(query=user_query, top_k=self.rag.top_k) if (self.rag.insert_acc > 0)
+            self.rag.retrieve(query=user_query, top_k=self.rag.top_k)
+            if (self.rag.insert_acc > 0)
             else []
         )
-        print(f"Retrieved {len(shots)} shots for RAG.")
-
-        # If shots are found, format them for few-shot learning
-
-        system_prompt = self.get_system_prompt()
-        prompt_fewshot = self.get_fewshot_template(table_schema, user_query)
-        prompt_zeroshot = self.get_zeroshot_prompt(table_schema, user_query)
-
         if len(shots):
             fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
-            try:
-                prompt = re.sub(
-                    pattern=r"\{fewshot_text\}", repl=fewshot_text, string=prompt_fewshot
-                )
-            except Exception as e:
-                print(f"Error ```{e}``` caused by these shots. Using the zero-shot prompt.")
-                prompt = prompt_zeroshot
+            prompt = prompt_fewshot.format(fewshot_text=fewshot_text)
         else:
             print("No RAG shots found. Using zeroshot prompt.")
             prompt = prompt_zeroshot
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": prompt},
         ]
-        response = self.generate_response(messages)
+        pred_text = self.generate_response(messages)
+        sql_code = self.parse_sql(pred_text)
 
         self.update_log_info(
             log_data={
-                "input_pred": messages[1]["content"],
-                "output_pred": response,
                 "num_shots": str(len(shots)),
+                "input_pred": prompt,
+                "output_pred": pred_text,
             }
         )
-        self.inputs.append(user_query)
-        self.self_outputs.append(f"{response!s}.")
 
-        return response
+        self.inputs.append(user_query)
+        self.self_outputs.append(f"```sql\n{sql_code}\n```")
+        return sql_code
+
+    @staticmethod
+    def parse_sql(pred_text: str) -> str:
+        """
+        Parse the SQL code from the LLM's response.
+        """
+        pattern = r"```sql([\s\S]*?)```"
+        match = re.search(pattern, pred_text)
+        if match:
+            sql_code = match.group(1)
+            sql_code = sql_code.strip()
+            return sql_code
+        else:
+            print("No SQL code found in the response")
+            sql_code = pred_text
+        return sql_code
 
 
 if __name__ == "__main__":
@@ -405,7 +396,7 @@ if __name__ == "__main__":
         msg = f"Invalid benchmark name: {args.bench_name}"
         raise ValueError(msg)
 
-    model_name = "meta-llama/Llama-3.1-8B-Instruct"
+    model_name = "Qwen/Qwen2.5-7B-Instruct"
 
     bench_cfg = {"bench_name": args.bench_name, "output_path": args.output_path}
     config = {
@@ -420,6 +411,10 @@ if __name__ == "__main__":
             "seed": 0,
             "top_k": 16,
             "order": "similar_at_top",
+            "embedding_model_kwargs": {
+                "use_memory_efficient_attention": True,
+                "unpad_inputs": False,
+            },
         },
     }
     agent = agent_name(config)
