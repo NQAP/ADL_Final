@@ -231,28 +231,23 @@ class ClassificationAgent(LocalModelAgent):
     @staticmethod
     def get_system_prompt() -> str:
         return textwrap.dedent("""
-        Act as a professional medical doctor that can diagnose the patient
-        based on the patient profile. Provide your diagnosis in the following
-        format: <number>. <diagnosis>
-        """).strip()
+        Act as a professional medical doctor that can diagnose the patient based on the patient profile.
+        Provide your diagnosis in the following format: <number>. <diagnosis>
+        """).strip()  # noqa: E501
 
     @staticmethod
     def get_zeroshot_prompt(option_text: str, text: str) -> str:
         return textwrap.dedent(f"""
-        Diagnose the patient based on the following patient profile:
+        Act as a medical doctor and diagnose the patient based on the following patient profile:
 
         {text}
 
-        All possible diagnoses for you to choose from are as follows (one diagnosis per line,
-        in the format of <number>. <diagnosis>):
+        All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
 
         {option_text}
 
-        Even if there's no diagnosis that perfectly matches the patient profile, you should still
-        choose the most possible one from the list. Now, directly provide the diagnosis for the
-        patient in the following format:
-        <number>. <diagnosis>
-        """).strip()
+        Now, directly provide the diagnosis for the patient in the following format: <number>. <diagnosis>
+        """).strip()  # noqa: E501
 
     @staticmethod
     def get_fewshot_template(
@@ -260,10 +255,9 @@ class ClassificationAgent(LocalModelAgent):
         text: str,
     ) -> str:
         return textwrap.dedent(f"""
-        Diagnose the patient based on the provided patient profile.
+        Act as a medical doctor and diagnose the patient based on the provided patient profile:
 
-        All possible diagnoses for you to choose from are as follows (one diagnosis per line,
-        in the format of <number>. <diagnosis>):
+        All possible diagnoses for you to choose from are as follows (one diagnosis per line, in the format of <number>. <diagnosis>):
         {option_text}
 
         Here are some example cases.
@@ -275,7 +269,7 @@ class ClassificationAgent(LocalModelAgent):
         {text}
 
         Now provide the diagnosis for the patient in the following format: <number>. <diagnosis>
-        """).strip()
+        """).strip()  # noqa: E501
 
     @staticmethod
     def extract_label(pred_text: str, label2desc: dict[int, str]) -> str:
@@ -353,6 +347,9 @@ class ClassificationAgent(LocalModelAgent):
             print("No RAG shots found. Using zeroshot prompt.")
             prompt = prompt_zeroshot
 
+        model_name = self.llm_config["model_names"][self.current_model_index]
+        current_tokenizer = self.tokenizers[model_name]
+
         messages = [
             {"role": "user", "content": f"{system_prompt}\n{prompt}"},
         ]
@@ -362,6 +359,8 @@ class ClassificationAgent(LocalModelAgent):
         self.update_log_info(
             log_data={
                 "input_pred": messages[0]["content"],
+                "num_input_tokens": len(current_tokenizer.encode(system_prompt + prompt)),
+                "num_output_tokens": len(current_tokenizer.encode(response)),
                 "output_pred": response,
                 "num_shots": str(len(shots)),
             }
