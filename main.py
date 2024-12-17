@@ -377,17 +377,69 @@ class ClassificationAgent(LocalModelAgent):
         return prediction
 
 
-class SQLGenerationAgent(Agent):
+class SQLGenerationAgent(LocalModelAgent):
     """
     An agent that generates SQL code based on the given table schema and the user query.
     """
 
-    def __init__(self, config: dict) -> None:
-        """
-        Initialize your LLM here
-        """
-        # TODO
-        raise NotImplementedError
+    @staticmethod
+    def get_system_prompt() -> str:
+        return strip_all_lines(
+            """
+            Act as a professional programmer.
+            You will be given a table schema and a user query, and you need to generate
+            the correct SQL code to answer the user query in the following format:
+            ```sql
+            <your_SQL_code>
+            ```
+            """
+        )
+
+    @staticmethod
+    def get_zeroshot_prompt(table_schema: str, user_query: str) -> str:
+        return strip_all_lines(
+            f"""\
+            {table_schema}
+
+            -- Using valid SQLite, answer the following question for the tables provided above.
+            -- Question: {user_query}
+
+            Now, generate the correct SQL code directly in the following format:
+            ```sql
+            <your_SQL_code>
+            ```
+            """.strip()
+        )
+
+    @staticmethod
+    def get_shot_template() -> str:
+        return strip_all_lines(
+            """
+            Question: {{question}}
+            {{answer}}
+            """.strip()
+        )
+
+    @staticmethod
+    def get_fewshot_template(table_schema: str, user_query: str) -> str:
+        return strip_all_lines(
+            f"""
+            You are performing the text-to-SQL task. Here are some examples:
+
+            {{fewshot_text}}
+
+            Now it's your turn.
+
+            -- SQL schema: {table_schema}
+            -- Using valid SQLite, answer the following question for the SQL schema provided above.
+            -- Question: {user_query}
+
+            Now, generate the correct SQL code directly in the following format:
+            ```sql
+            <your_SQL_code>
+            ```
+            """
+        )
 
     def __call__(self, table_schema: str, user_query: str) -> str:
         """
@@ -400,15 +452,57 @@ class SQLGenerationAgent(Agent):
         Returns:
             str: The SQL code that the LLM generates.
         """
-        # TODO: Note that your output should be a valid SQL code only.
-        raise NotImplementedError
 
-    def update(self, correctness: bool) -> bool:
+        self.reset_log_info()
+        system_prompt = self.get_system_prompt()
+        prompt_zeroshot = self.get_zeroshot_prompt(table_schema, user_query)
+        prompt_fewshot = self.get_fewshot_template(table_schema, user_query)
+
+        shots = (
+            self.rag.retrieve(query=user_query, top_k=self.rag.top_k)
+            if (self.rag.insert_acc > 0)
+            else []
+        )
+        if len(shots):
+            fewshot_text = "\n\n\n".join(shots).replace("\\", "\\\\")
+            prompt = prompt_fewshot.format(fewshot_text=fewshot_text)
+        else:
+            print("No RAG shots found. Using zeroshot prompt.")
+            prompt = prompt_zeroshot
+
+        messages = [
+            {"role": "user", "content": f"{system_prompt}\n{prompt}"},
+        ]
+        pred_text = self.generate_response(messages)
+        sql_code = self.parse_sql(pred_text)
+
+        self.update_log_info(
+            log_data={
+                "num_shots": str(len(shots)),
+                "input_pred": prompt,
+                "output_pred": pred_text,
+            }
+        )
+
+        self.inputs.append(user_query)
+        self.self_outputs.append(f"```sql\n{sql_code}\n```")
+        return sql_code
+
+    @staticmethod
+    def parse_sql(pred_text: str) -> str:
         """
-        Update your LLM agent based on the correctness of its own SQL code at the current time step.
+        Parse the SQL code from the LLM's response.
         """
-        # TODO
-        raise NotImplementedError
+        pattern = r"```sql([\s\S]*?)```"
+        match = re.search(pattern, pred_text)
+        if match:
+            sql_code = match.group(1)
+            sql_code = sql_code.strip()
+            return sql_code
+        else:
+            print("No SQL code found in the response")
+            sql_code = pred_text
+        return sql_code
 
 
 if __name__ == "__main__":
@@ -434,7 +528,7 @@ if __name__ == "__main__":
     config = {
         "save_memory": False,
         "dynamo_backend": "tensorrt",
-        "exp_name": f"self_streamicl_{args.bench_name}_gemma2_nf4",
+        "exp_name": f"mam_streamicl_{args.bench_name}_nf4",
         "bench_name": args.bench_name,
         "model_names": ["google/gemma-2-9b-it"],
         "max_tokens": max_tokens,
