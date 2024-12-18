@@ -176,7 +176,8 @@ class LocalModelAgent(Agent, ABC):
 
         with torch.inference_mode():
             generated_ids = current_model.generate(
-                **model_inputs, max_new_tokens=self.llm_config["max_tokens"], do_sample=False
+                **model_inputs, max_new_tokens=self.llm_config["max_tokens"], do_sample=False,
+                num_beams=3,
             )
 
         generated_ids = [
@@ -539,7 +540,7 @@ if __name__ == "__main__":
     elif args.bench_name.startswith("sql_generation"):
         agent_name = SQLGenerationAgent
         max_tokens = 512
-        model_names = ["meta-llama/Llama-3.1-8B-Instruct"]
+        model_names = ["Qwen/Qwen2.5-7B-Instruct"]
         rag_embedding_model = "BAAI/bge-base-en-v1.5"
         top_k = 16
     else:
@@ -549,7 +550,7 @@ if __name__ == "__main__":
     exp_name = f"{'self' if len(model_names) == 1 else 'mam'}_streamicl_{args.bench_name}_nf4"
 
     config = {
-        "save_memory": False,
+        "save_memory": True,
         "dynamo_backend": "tensorrt",
         "exp_name": exp_name,
         "bench_name": args.bench_name,
