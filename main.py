@@ -127,10 +127,7 @@ class LocalModelAgent(Agent, ABC):
 
     def prepare_model(self, index: int) -> None:
         bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            load_in_8bit=True,
         )
 
         if self.llm_config["save_memory"]:
@@ -549,7 +546,7 @@ if __name__ == "__main__":
     exp_name = f"{'self' if len(model_names) == 1 else 'mam'}_streamicl_{args.bench_name}_nf4"
 
     config = {
-        "save_memory": False,
+        "save_memory": True,
         "dynamo_backend": "tensorrt",
         "exp_name": exp_name,
         "bench_name": args.bench_name,
