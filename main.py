@@ -419,10 +419,10 @@ class SQLGenerationAgent(LocalModelAgent):
     def get_shot_template() -> str:
         return strip_all_lines(
             """
-            Question: {{question}}
+            Question: {question}
             Answer:
 
-            {{answer}}
+            {answer}
             """.strip()
         )
 
