@@ -546,10 +546,12 @@ if __name__ == "__main__":
         msg = f"Invalid benchmark name: {args.bench_name}"
         raise ValueError(msg)
 
+    exp_name = f"{'self' if len(model_names) == 1 else 'mam'}_streamicl_{args.bench_name}_nf4"
+
     config = {
         "save_memory": False,
         "dynamo_backend": "tensorrt",
-        "exp_name": f"self_streamicl_{args.bench_name}_nf4",
+        "exp_name": exp_name,
         "bench_name": args.bench_name,
         "model_names": model_names,
         "max_tokens": max_tokens,
@@ -564,7 +566,7 @@ if __name__ == "__main__":
 
     bench_cfg = {
         "bench_name": args.bench_name,
-        "output_path": f"{args.bench_name}/{config['exp_name']}.csv",
+        "output_path": f"{args.bench_name}/{exp_name}.csv",
     }
 
     if config["rag"]["embedding_model"] == "dunzhang/stella_en_400M_v5":
@@ -577,4 +579,4 @@ if __name__ == "__main__":
         import torch_tensorrt  # noqa: F401
 
     agent = agent_name(config)
-    main(agent, bench_cfg, use_wandb=True, wandb_name=config["exp_name"], wandb_config=config)
+    main(agent, bench_cfg, use_wandb=True, wandb_name=exp_name, wandb_config=config)
