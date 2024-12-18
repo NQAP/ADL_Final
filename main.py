@@ -126,12 +126,17 @@ class LocalModelAgent(Agent, ABC):
         self.rag = RAG(self.llm_config["rag"])
 
     def prepare_model(self, index: int) -> None:
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-        )
+        if self.llm_config["use_4bit"]:
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            )
+        else:
+            bnb_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+            )
 
         if self.llm_config["save_memory"]:
             for model in self.models.values():
@@ -176,8 +181,7 @@ class LocalModelAgent(Agent, ABC):
 
         with torch.inference_mode():
             generated_ids = current_model.generate(
-                **model_inputs, max_new_tokens=self.llm_config["max_tokens"], do_sample=False,
-                num_beams=3,
+                **model_inputs, max_new_tokens=self.llm_config["max_tokens"], do_sample=False
             )
 
         generated_ids = [
@@ -537,12 +541,14 @@ if __name__ == "__main__":
         model_names = ["google/gemma-2-9b-it"]
         rag_embedding_model = "dunzhang/stella_en_400M_v5"
         top_k = 5
+        use_4bit = True
     elif args.bench_name.startswith("sql_generation"):
         agent_name = SQLGenerationAgent
         max_tokens = 512
-        model_names = ["Qwen/Qwen2.5-7B-Instruct"]
+        model_names = ["meta-llama/Llama-3.1-8B-Instruct"]
         rag_embedding_model = "BAAI/bge-base-en-v1.5"
         top_k = 16
+        use_4bit = False
     else:
         msg = f"Invalid benchmark name: {args.bench_name}"
         raise ValueError(msg)
@@ -556,6 +562,7 @@ if __name__ == "__main__":
         "bench_name": args.bench_name,
         "model_names": model_names,
         "max_tokens": max_tokens,
+        "use_4bit": use_4bit,
         "rag": {
             "embedding_model": rag_embedding_model,
             "seed": 0,
