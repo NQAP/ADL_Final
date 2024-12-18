@@ -192,7 +192,7 @@ class LocalModelAgent(Agent, ABC):
 
         self.update_log_info(
             log_data={
-                "num_input_tokens": len(current_tokenizer.encode(messages[0]["content"])),
+                "num_input_tokens": len(current_tokenizer.encode(text_chat)),
                 "num_output_tokens": len(current_tokenizer.encode(response)),
             }
         )
@@ -342,6 +342,7 @@ class ClassificationAgent(LocalModelAgent):
         label = "apple"  # (should be a key in label2desc, i.e., ["apple", "banana", "cherry"])
         ```
         """
+
         option_text = "\n".join([f"{k!s}. {v}" for k, v in label2desc.items()])
         system_prompt = self.get_system_prompt()
         prompt_zeroshot = self.get_zeroshot_prompt(option_text, text)
@@ -387,24 +388,27 @@ class SQLGenerationAgent(LocalModelAgent):
         return strip_all_lines(
             """
             Act as a professional programmer.
+
             You will be given a table schema and a user query, and you need to generate
             the correct SQL code to answer the user query in the following format:
+
             ```sql
             <your_SQL_code>
             ```
-            """
+            """.strip()
         )
 
     @staticmethod
     def get_zeroshot_prompt(table_schema: str, user_query: str) -> str:
         return strip_all_lines(
-            f"""\
+            f"""
             {table_schema}
 
             -- Using valid SQLite, answer the following question for the tables provided above.
             -- Question: {user_query}
 
             Now, generate the correct SQL code directly in the following format:
+
             ```sql
             <your_SQL_code>
             ```
@@ -416,6 +420,8 @@ class SQLGenerationAgent(LocalModelAgent):
         return strip_all_lines(
             """
             Question: {{question}}
+            Answer:
+
             {{answer}}
             """.strip()
         )
@@ -430,15 +436,16 @@ class SQLGenerationAgent(LocalModelAgent):
 
             Now it's your turn.
 
-            -- SQL schema: {table_schema}
-            -- Using valid SQLite, answer the following question for the SQL schema provided above.
-            -- Question: {user_query}
+            * SQL schema: {table_schema}
+            * Using valid SQLite, answer the following question for the SQL schema provided above.
+            * Question: {user_query}
 
             Now, generate the correct SQL code directly in the following format:
+
             ```sql
             <your_SQL_code>
             ```
-            """
+            """.strip()
         )
 
     def __call__(self, table_schema: str, user_query: str) -> str:
@@ -470,9 +477,16 @@ class SQLGenerationAgent(LocalModelAgent):
             print("No RAG shots found. Using zeroshot prompt.")
             prompt = prompt_zeroshot
 
-        messages = [
-            {"role": "user", "content": f"{system_prompt}\n{prompt}"},
-        ]
+        if self.llm_config["model_names"][self.current_model_index] == "google/gemma-2-9b-it":
+            messages = [
+                {"role": "user", "content": f"{system_prompt}\n{prompt}"},
+            ]
+        else:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ]
+
         pred_text = self.generate_response(messages)
         sql_code = self.parse_sql(pred_text)
 
@@ -493,6 +507,7 @@ class SQLGenerationAgent(LocalModelAgent):
         """
         Parse the SQL code from the LLM's response.
         """
+
         pattern = r"```sql([\s\S]*?)```"
         match = re.search(pattern, pred_text)
         if match:
@@ -528,7 +543,7 @@ if __name__ == "__main__":
     config = {
         "save_memory": False,
         "dynamo_backend": "tensorrt",
-        "exp_name": f"self_streamicl_{args.bench_name}_gemma2_nf4",
+        "exp_name": f"self_streamicl_{args.bench_name}_nf4",
         "bench_name": args.bench_name,
         "model_names": ["google/gemma-2-9b-it"],
         "max_tokens": max_tokens,
