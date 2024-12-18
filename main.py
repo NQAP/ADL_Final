@@ -533,9 +533,15 @@ if __name__ == "__main__":
     if args.bench_name.startswith("classification"):
         agent_name = ClassificationAgent
         max_tokens = 32
+        model_names = ["google/gemma-2-9b-it"]
+        rag_embedding_model = "dunzhang/stella_en_400M_v5"
+        top_k = 5
     elif args.bench_name.startswith("sql_generation"):
         agent_name = SQLGenerationAgent
         max_tokens = 512
+        model_names = ["meta-llama/Llama-3.1-8B-Instruct"]
+        rag_embedding_model = "BAAI/bge-base-en-v1.5"
+        top_k = 16
     else:
         msg = f"Invalid benchmark name: {args.bench_name}"
         raise ValueError(msg)
@@ -545,23 +551,27 @@ if __name__ == "__main__":
         "dynamo_backend": "tensorrt",
         "exp_name": f"self_streamicl_{args.bench_name}_nf4",
         "bench_name": args.bench_name,
-        "model_names": ["google/gemma-2-9b-it"],
+        "model_names": model_names,
         "max_tokens": max_tokens,
         "rag": {
-            "embedding_model": "dunzhang/stella_en_400M_v5",
+            "embedding_model": rag_embedding_model,
             "seed": 0,
-            "top_k": 5,
+            "top_k": top_k,
             "order": "similar_at_top",
-            "embedding_model_kwargs": {
-                "use_memory_efficient_attention": False,
-                "unpad_inputs": False,
-            },
+            "embedding_model_kwargs": {},
         },
     }
+
     bench_cfg = {
         "bench_name": args.bench_name,
         "output_path": f"{args.bench_name}/{config['exp_name']}.csv",
     }
+
+    if config["rag"]["embedding_model"] == "dunzhang/stella_en_400M_v5":
+        config["rag"]["embedding_model_kwargs"] = {
+            "use_memory_efficient_attention": False,
+            "unpad_inputs": False,
+        }
 
     if config["dynamo_backend"] == "tensorrt":
         import torch_tensorrt  # noqa: F401
