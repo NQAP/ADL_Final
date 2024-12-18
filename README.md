@@ -20,10 +20,10 @@ python setup_data.py
 
 ## choose model
 
-In our project, we have tested the following models:\\
-Qwen/Qwen2.5-7B-Instruct\\
-meta-llama/Llama-3.1-8B-Instruct\\
-prince-canuma/Ministral-8B-Instruct-2410-HF\\
+In our project, we have tested the following models:\
+Qwen/Qwen2.5-7B-Instruct\
+meta-llama/Llama-3.1-8B-Instruct\
+prince-canuma/Ministral-8B-Instruct-2410-HF\
 google/gemma-2-9b-it
 
 If you want to use your own model, change the model_name in main.py ex.  model_names = ["google/gemma-2-9b-it"]
