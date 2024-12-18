@@ -528,7 +528,7 @@ if __name__ == "__main__":
     config = {
         "save_memory": False,
         "dynamo_backend": "tensorrt",
-        "exp_name": f"mam_streamicl_{args.bench_name}_nf4",
+        "exp_name": f"self_streamicl_{args.bench_name}_gemma2_nf4",
         "bench_name": args.bench_name,
         "model_names": ["google/gemma-2-9b-it"],
         "max_tokens": max_tokens,
