@@ -1,21 +1,17 @@
 from abc import ABC, abstractmethod
 from typing import Any
-
-from datasets import Dataset, load_dataset
+from datasets import load_dataset, Dataset
 
 
 class Bench(ABC):
     """Associated with corresponding Dataset, Feedback, and Metrics"""
 
-    DATASET_PATH: str | None = None
-    DATASET_NAME: str | None = None
+    DATASET_PATH: str = None
+    DATASET_NAME: str = None
 
     def __init__(self, config: dict):
         self.config = config
-
-        assert self.DATASET_PATH is not None
         self.dataset = load_dataset(self.DATASET_PATH, self.DATASET_NAME)
-
         self.use_wandb = False
         self.n_correct = 0
         self.references = []
@@ -26,7 +22,9 @@ class Bench(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def give_feedback(self, model_output: str, row: dict, res: dict) -> tuple[bool, dict]:
+    def give_feedback(
+        self, model_output: str, row: dict, res: dict
+    ) -> tuple[bool, dict]:
         """Give feedback according to benchmark configurations.
 
         1. No feedback
@@ -69,14 +67,12 @@ class Bench(ABC):
     def process_results(
         self, prediction: Any, label: Any, return_details: bool = False
     ) -> bool | dict:
-        """Compare the prediction with the label and calculate streaming metrics
-        at the current time point.
+        """Compare the prediction with the label and calculate streaming metrics at the current time point.
 
         Args:
             prediction (Any): the agent's prediction
             label (Any): the ground truth label
-            return_details (bool, optional): Return correctness of prediction (bool) or detailed
-            metrics (dict). Defaults to False
+            return_details (bool, optional): Return correctness of prediction (bool) or detailed metrics (dict). Defaults to False
 
         Returns:
             bool | dict:  Return correctness of prediction (bool) or detailed metrics (dict)

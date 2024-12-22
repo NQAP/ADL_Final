@@ -55,15 +55,8 @@ class RetrieveOrder(Enum):
 
 class RAG:
     def __init__(self, rag_config: dict) -> None:
-        self.embed_model = AutoModel.from_pretrained(
-            rag_config["embedding_model"],
-            trust_remote_code=True,
-            use_memory_efficient_attention=False,
-            unpad_inputs=False,
-        ).eval()
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            rag_config["embedding_model"], trust_remote_code=True
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(rag_config["embedding_model"])
+        self.embed_model = AutoModel.from_pretrained(rag_config["embedding_model"]).eval()
 
         self.index = None
         self.id2evidence = {}
@@ -81,6 +74,7 @@ class RAG:
         # TODO: make a file to save the inserted rows
 
     def create_faiss_index(self):
+        # Create a FAISS index
         self.index = faiss.IndexFlatL2(self.embed_dim)
 
     def encode_data(self, sentence: str) -> np.ndarray:
@@ -89,7 +83,7 @@ class RAG:
             [sentence], padding=True, truncation=True, return_tensors="pt"
         )
         # Compute token embeddings
-        with torch.inference_mode():
+        with torch.no_grad():
             model_output = self.embed_model(**encoded_input)
             # Perform pooling. In this case, cls pooling.
             sentence_embeddings = model_output[0][:, 0]

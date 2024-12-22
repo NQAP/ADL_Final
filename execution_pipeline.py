@@ -4,10 +4,10 @@ os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import json
 
-import wandb
 from colorama import Fore, Style
 from tqdm import tqdm
 
+import wandb
 from benchmarks import Bench, load_benchmark
 from utils import merge_dicts
 
